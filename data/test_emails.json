@@ -1,0 +1,7 @@
+[
+  {
+    "from": "jdoe@example.com",
+    "subject": "¿Cuál es el saldo del producto ABC?",
+    "body": "Hola, necesito saber el saldo disponible y movimientos de la última semana del producto ABC."
+  }
+]
