@@ -1,1 +1,2 @@
 {"to": "jdoe@example.com", "subject": "Re: ¿Cuál es el saldo del producto ABC?", "body": "Este es un correo de prueba."}
+{"to": "jdoe@example.com", "subject": "Re: Saldo producto ABC", "body": "Resultados:\nquantity: 120, last_movement: 2025-05-20 00:00:00.000000"}
