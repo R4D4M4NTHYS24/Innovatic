@@ -7,3 +7,4 @@
 # Bytecode de Python
 __pycache__/
 *.py[cod]
+token_cache.bin
