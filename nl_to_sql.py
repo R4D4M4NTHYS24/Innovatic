@@ -1,85 +1,67 @@
 # nl_to_sql.py
-import os
+import re
 from langchain_openai import OpenAI
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
-from dotenv import load_dotenv
 
-# Carga la clave de OpenAI desde .env
-dotenv_loaded = load_dotenv()
-
-# Función principal que traduce NL a SQL
-def nl_to_sql(natural_query: str) -> str:
+def nl_to_sql_from_subject(subject: str) -> str:
     """
-    Convierte una consulta en lenguaje natural a SQL para una base SQLite
-    con tablas:
-    - products(id, name, quantity)
-    - movements(id, product_id, change, date)
-
-    Retorna la consulta SQL adecuada según el tipo de petición:
-      • Saldo disponible
-      • Historial de movimientos (última semana)
-      • Proyección de abastecimiento
+    1) Valida y extrae de un asunto como
+         "Consulta inventario: ABC, historial, 7 días"
+       las partes: producto, tipo de consulta y días.
+    2) Llama a un LLM vía LangChain para generar SOLO la SQL.
     """
-    # Extrae el nombre del producto después de la palabra 'producto'
-    product = natural_query
-    if 'producto' in natural_query.lower():
-        parts = natural_query.lower().split('producto')
-        product = parts[-1].strip().rstrip('.')
+    # --- 1) Validación y extracción ---
+    try:
+        prefix, rest = subject.split(":", 1)
+    except ValueError:
+        raise ValueError(
+            "Asunto inválido. Debe ser:\n"
+            "  Consulta inventario: <Producto>, <Tipo>, <n días>"
+        )
+    if prefix.strip().lower() != "consulta inventario":
+        raise ValueError("Asunto inválido. Debe empezar con 'Consulta inventario:'")
 
-    # Plantilla con variables product y query para contexto
+    parts = [p.strip() for p in rest.split(",")]
+    if len(parts) != 3:
+        raise ValueError(
+            "Asunto inválido. Debe tener 3 partes separadas por comas:\n"
+            "  Consulta inventario: <Producto>, <Tipo>, <n días>"
+        )
+
+    producto, tipo_raw, dias_texto = parts
+    m = re.search(r"(\d+)", dias_texto)
+    if not m:
+        raise ValueError("No se encontró un número de días válido en el asunto.")
+    dias = int(m.group(1))
+
+    tipo = tipo_raw.strip().lower()
+    if tipo not in ("saldo", "historial", "historial de movimientos", "proyección", "proyeccion"):
+        raise ValueError("Tipo no soportado. Usa 'saldo', 'historial' o 'proyección'.")
+
+    # --- 2) LLM Prompt para SQL ---
     prompt = PromptTemplate(
-        input_variables=["product", "query"],
-        template='''
-Eres un asistente que convierte consultas de inventario en SQL para SQLite.
-Tablas disponibles:
-- products(id, name, quantity)
-- movements(id, product_id, change, date)
+        input_variables=["producto", "tipo", "dias"],
+        template="""
+Eres un experto en SQLite. Dispones de dos tablas:
 
-Casos:
-1) Saldo disponible:
-   SELECT quantity
-   FROM products
-   WHERE name = "{product}";
+  products(id, name, quantity)
+  movements(id, product_id, change, date)
 
-2) Historial de movimientos (última semana):
-   SELECT change, date
-   FROM movements
-   WHERE product_id = (
-     SELECT id FROM products WHERE name = "{product}"
-   )
-   AND date >= date('now', '-7 days');
+Genera **solo** la consulta SQL que corresponda a:
+- producto: "{producto}"
+- tipo de consulta: "{tipo}"     (uno de: saldo, historial, proyección)
+- rango de días: últimos {dias} días.
 
-3) Proyección de abastecimiento:
-   WITH recent AS (
-     SELECT SUM(change) AS total_change
-     FROM movements
-     WHERE product_id = (
-       SELECT id FROM products WHERE name = "{product}"
-     )
-     AND date >= date('now', '-7 days')
-   )
-   SELECT
-     p.quantity AS current_stock,
-     recent.total_change AS net_movement,
-     CASE
-       WHEN recent.total_change < 0 THEN
-         ROUND(p.quantity / ABS(recent.total_change / 7.0), 1)
-       ELSE NULL
-     END AS days_until_stockout
-   FROM products p, recent
-   WHERE p.name = "{product}";
-
-Ahora recibe la consulta en lenguaje natural:
-"""
-{query}
-"""
-Devuelve solo la consulta SQL apropiada sin explicaciones.
-'''
+No incluyas explicaciones ni comentarios, solo la sentencia SQL terminada en ';'
+""",
     )
 
-    # Construye y ejecuta la cadena
     llm = OpenAI(temperature=0)
     chain = LLMChain(llm=llm, prompt=prompt)
-    sql = chain.run(product=product, query=natural_query).strip()
+    sql = chain.run(producto=producto, tipo=tipo, dias=dias).strip()
+
+    # Aseguramos punto y coma
+    if not sql.endswith(";"):
+        sql += ";"
     return sql

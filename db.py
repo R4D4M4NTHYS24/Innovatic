@@ -2,21 +2,23 @@
 from sqlalchemy import text
 from models import SessionLocal, init_db
 
-# Asegúrate de inicializar la DB antes de cualquier consulta
-init_db()
+# Inicializa la base de datos (crea tablas) antes de consultas
+def init():
+    init_db()
+
+# Ejecuta init al importar el módulo
+auto_init = init()
 
 def execute_sql(sql: str):
     """
-    Ejecuta la consulta SQL en SQLite y devuelve los resultados como lista de dicts.
+    Ejecuta la consulta SQL en SQLite y devuelve resultados como lista de diccionarios.
     """
     db = SessionLocal()
     try:
         result = db.execute(text(sql))
-        # Obtiene columnas y filas
         keys = result.keys()
         rows = result.fetchall()
-        # Convierte a lista de diccionarios
-        data = [dict(zip(keys, row)) for row in rows]
-        return data
+        # Mapea a dict por fila
+        return [dict(zip(keys, row)) for row in rows]
     finally:
         db.close()
