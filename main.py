@@ -81,7 +81,6 @@ def build_sql(producto: str, tipo: str, dias: int) -> str:
             f"FROM products "
             f"WHERE name = '{producto}';"
         )
-
     if tipo.startswith("historial"):
         return (
             f"SELECT change, date "
@@ -91,7 +90,6 @@ def build_sql(producto: str, tipo: str, dias: int) -> str:
             f") "
             f"AND date >= date('now','-{dias} days');"
         )
-
     # proyección
     return (
         f"WITH recent AS ( "
@@ -170,40 +168,32 @@ def process_email(email: EmailIn):
     try:
         producto, tipo, dias_req = parse_subject(email.subject)
 
-        # obtener rango real
         avail = get_data_range(producto)
         if avail is None:
-            body = f"No hay movimientos registrados para el producto {producto}."
-            send_email(email.sender, f"Re: {email.subject}", body)
-            return {"status": "sent", "to": email.sender, "alert": "sin datos"}
+            human_body = f"No hay movimientos registrados para el producto {producto}."
+        else:
+            dias_eff, aviso = adjust_days(dias_req, avail)
+            sql = build_sql(producto, tipo, dias_eff)
+            logger.info("SQL generado: %s", sql)
 
-        # ajustar días y aviso
-        dias_eff, aviso = adjust_days(dias_req, avail)
+            rows = execute_sql(sql)
+            if tipo.startswith("historial"):
+                rows = rows[:dias_req]
+            logger.info("Resultados obtenidos: %s", rows)
 
-        # construir SQL
-        sql = build_sql(producto, tipo, dias_eff)
-        logger.info("SQL generado: %s", sql)
+            human_body = (aviso + "\n\n" if aviso else "") + format_response(rows)
 
-        # ejecutar
-        rows = execute_sql(sql)
-
-        # **Si es historial, recortamos exactamente a los 'dias_req' movimientos:**
-        if tipo.startswith("historial"):
-            rows = rows[:dias_req]
-
-        logger.info("Resultados obtenidos: %s", rows)
-
-        # formatear cuerpo
-        human_body = ""
-        if aviso:
-            human_body += aviso + "\n\n"
-        human_body += format_response(rows)
-
-        # enviar correo
         resp_subj = f"Re: {email.subject}"
         send_email(email.sender, resp_subj, human_body)
         logger.info("Correo enviado a %s", email.sender)
-        return {"status": "sent", "to": email.sender, "subject": resp_subj}
+
+        # ✏ Aquí agregamos 'body' a la respuesta JSON
+        return {
+            "status": "sent",
+            "to": email.sender,
+            "subject": resp_subj,
+            "body": human_body
+        }
 
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -219,7 +209,7 @@ async def poll_inbox():
         try:
             mails = fetch_new_emails()
             for em in mails:
-                msg_id = em.get("id") or (em.get("from","")+em.get("subject",""))
+                msg_id = em.get("id") or (em.get("from","") + em.get("subject",""))
                 subj = em.get("subject","")
                 if msg_id in processed_ids:
                     continue
