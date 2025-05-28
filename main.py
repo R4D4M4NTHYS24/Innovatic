@@ -14,7 +14,7 @@ from email_io import fetch_new_emails, send_email
 # --- Configuración básica ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("inventario")
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", 60))
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", 30))
 BACKOFF_BASE = 2  # base para back-off exponencial
 
 # --- Persistencia de IDs procesados ---
